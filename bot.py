@@ -24,13 +24,13 @@ ADMIN_IDS: List[int] = [int(x.strip()) for x in ADMIN_IDS_ENV.split(",") if x.st
 # ===== رابط القروب الافتراضي (يُمكن تجاوزه من ENV) =====
 COMMUNITY_LINK = os.getenv(
     "COMMUNITY_LINK",
-    "https://t.me/+eoiyUHKbmkI5YzM0"  # <-- الرابط المحدث
+    "https://t.me/+eoiyUHKbmkI5YzM0"
 )
 
 os.makedirs("voices", exist_ok=True)
 
 # ===== ذاكرة داخلية فقط (بدون ملفات) =====
-users_lang: Dict[int, str] = {}   # { 12345: "ar" | "en" }
+users_lang: Dict[int, str] = {}
 recent_lang_set: Dict[int, float] = {}
 
 # ===== نصوص اللغتين =====
@@ -53,8 +53,10 @@ EN_WELCOME = (
 LANG_PICK_TEXT = "اختاري لغتج / Choose your language:"
 EMIRATE_QUESTION_AR = "سجّلي فويس ≤ 30 ثانية: قولي اسمج والإمارة اللي تسكنين فيها."
 EMIRATE_QUESTION_EN = "Please record a short voice (≤ 30s): say your name and which Emirate you live in."
-CONFIRM_AR = "تم استلام الفويس ✅ بنرسل لج المشرف للمراجعة."
-CONFIRM_EN = "Voice received ✅ We’ll send it to the moderator for review."
+
+# ✅ التعديل هنا
+CONFIRM_AR = "تم استلام الفويس ✅"
+CONFIRM_EN = "Voice received ✅"
 
 EMIRATES_AR = ["أبوظبي","دبي","الشارقة","عجمان","أم القيوين","رأس الخيمة","الفجيرة","العين"]
 EMIRATE_REGEX = "|".join([re.escape(e) for e in EMIRATES_AR])
@@ -76,7 +78,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("أرسلي /start لاختيار اللغة ثم سجّلي فويس. /start to choose language, then send a short voice.")
 
-# ===== اختيار اللغة (بدون حفظ ملفات) =====
+# ===== اختيار اللغة =====
 async def select_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -101,7 +103,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lang = users_lang.get(user_id)
     if not lang:
-        # ما في لغة محفوظة للـ session الحالية → نطلب اختيار اللغة
         buttons = [[
             InlineKeyboardButton("العربية 🇦🇪", callback_data="lang_ar"),
             InlineKeyboardButton("English 🇬🇧", callback_data="lang_en")
@@ -109,14 +110,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(LANG_PICK_TEXT, reply_markup=InlineKeyboardMarkup(buttons))
         return
 
-    # تحميل الفويس
     file = await context.bot.get_file(voice.file_id)
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     safe_name = f"{user_id}_{ts}.ogg"
     path = pathlib.Path("voices") / safe_name
     await file.download_to_drive(custom_path=str(path))
 
-    # محاولة اكتشاف الإمارة من الكابتشن (اختياري)
     caption = (update.message.caption or "").strip()
     emirate_found = None
     if caption:
@@ -124,10 +123,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if m:
             emirate_found = m.group(0)
 
-    # إشعار المستخدم
+    # ✅ هنا يستخدم النص الجديد
     await update.message.reply_text(CONFIRM_AR if lang == "ar" else CONFIRM_EN)
 
-    # إرسال للأدمن(ـز) مع أزرار الموافقة/الرفض + الفويس
     try:
         approve_btn = InlineKeyboardButton("موافقة ✅", callback_data=f"approve:{user_id}:{safe_name}")
         reject_btn  = InlineKeyboardButton("رفض ❌", callback_data=f"reject:{user_id}:{safe_name}")
@@ -152,16 +150,16 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error notifying admins: {e}")
 
-# ===== موافقة/رفض الأدمن =====
+# ===== موافقة/رفض =====
 async def admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data  # approve:{uid}:{filename} أو reject:{uid}:{filename}
+    data = query.data
 
     action, uid_str, filename = data.split(":", 2)
     uid = int(uid_str)
 
-    lang = users_lang.get(uid, "ar")  # إن ما لقاها بنرسل عربي
+    lang = users_lang.get(uid, "ar")
 
     if action == "approve":
         msg = (AR_WELCOME if lang == "ar" else EN_WELCOME).format(community=COMMUNITY_LINK)
@@ -172,7 +170,7 @@ async def admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=uid, text=msg)
         await query.edit_message_text(f"❌ تم رفض {uid}.")
 
-# ===== فلاتر النصوص =====
+# ===== fallback =====
 async def fallback_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = users_lang.get(user_id)
